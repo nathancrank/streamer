@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+ 
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stream</title>
+ 
+  <style type="text/css">
+    body, html {
+      background-color: black;
+      min-height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: -apple-system, Helvetica, Arial, sans-serif;
+    }
+    button {
+      font-size: 1em;
+    }
+
+    #stream {
+      margin: 0 auto;
+      width: 100%;
+      max-height: 100%;
+    }
+
+    #streambox {
+      transition: filter ease-in-out 3s;
+    }
+    .shutterOpen {
+      pointer-events: none;
+      cursor: not-allowed;
+    }
+    .shutterOpen :not(#stream) {
+      filter: blur(1px);
+      -webkit-filter: blur(1px); 
+    }
+    .shutterOpen #stream {
+      filter: blur(25px) grayscale( 25% ) brightness( 50% );
+      -webkit-filter: blur(25px) grayscale( 25% ) brightness( 50% );      
+    }
+
+    #cameraToolbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 7em;
+      background-color: rgba( 0, 0, 0, .25 );
+    }
+
+    #shutter {
+      position: fixed;
+      bottom: 1.125em;
+      left: 50%;
+      margin-left: -3.5em;
+      text-indent: -999em;
+      height: 5em;
+      width: 5em;
+      background-color: transparent;
+      border: .25em white solid;
+      border-radius: 100%;
+      transition: border ease-in-out .0625s, background-color ease-in-out .0625s;
+    }
+    #shutter:active {
+      border: 2em rgba( 0, 153, 51, .5 ) solid;
+      background-color: rgba( 0, 153, 51, 1 );
+    }
+
+    .toolbarButton {
+      height: 7em;
+      width: 9em;
+      background-color: transparent;
+      border: 0;
+      color: white;
+    }
+    
+
+    #toggleOptions {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+    }
+
+    #options {
+      transition: transform ease-in-out .25s;
+      background-color: rgba( 0, 0, 0, .9 );
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 10;
+      width: 100%;
+      height: 100%;
+      transform: translateX( 0 );
+    }
+    @media ( min-width: 40em ) {
+      #options {
+        width: 20em;
+      }
+    }
+    #options.ng-hide,
+    #options.ng-hide-add,
+    #options.ng-hide-remove {
+      display: block !important;
+    }
+    #options.ng-hide {
+      transform: translateX( 100% );
+    }
+    @media ( max-width: 40em ) {
+      #options + #streambox {
+        filter: blur( 25px );
+        -webkit-filter: blur( 25px );
+      }
+    }
+    #options.ng-hide + #streambox {
+      filter: none;
+      -webkit-filter: none;
+    }
+
+    #optionsScroll {
+      height: calc( 100% - 12em );
+      max-width: 45em;
+      padding: 2em;
+      overflow: auto;
+    }
+    #optionsToolbar {
+      height: 7em;
+    }
+
+    #options label {
+      display: block;
+      color: white;
+      font-size: 1.5em;
+      margin: .75em 0 .25em;
+    }
+    #options label span {
+      float: right;
+    }
+    #options select,
+    #options input {
+      width: 100%;
+      font-size: 2em;
+      background: white;
+    }
+    input[type='range'] {
+      -webkit-appearance: none !important;
+      background: rgba( 0, 153, 51, .5 );
+      height:.25em;
+      border-radius: .5em;
+    }
+    input[type='range']::-webkit-slider-thumb {
+      -webkit-appearance: none !important;
+      background: rgba( 0, 153, 51, 1 );
+      height:.75em;
+      width:.75em;
+      border-radius: 100%;
+    }
+
+    #closeOptions {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      width: 9em;
+      height: 7em;
+      background-color: rgba( 0, 0, 0,0 );
+      border: 0;
+      color: white;
+    }
+  </style>
+ 
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.4.6/angular.min.js"></script>
+
+  <script>
+    var app = angular.module('camera', []);
+
+    app.controller( 'cameraController', function( $scope ) {
+
+      var socket = io();
+
+      var vm = this;
+
+      vm.showOptions = false;
+      vm.cachedSettings = {};
+
+      $scope.settings = {};
+
+      getSettings();
+
+      $scope.$watchCollection( 'settings', sendSettings );
+
+      startStream();
+
+      socket.on('liveStream', function(url) {
+        document.getElementById('stream').setAttribute('src', url);
+      });
+
+      socket.on('sendSettings', function( settings ) {
+        setSettings( settings );
+      });
+
+      socket.on('refresh', function() {
+        location.reload();
+      });
+
+      socket.on('shutterOpen', function() {
+        document.getElementById('streambox').className = '';
+      });
+
+      vm.shutter = function() {
+        document.getElementById('streambox').className = 'shutterOpen';
+        takeStill();
+      }
+
+      function getSettings() {
+        socket.emit('get-settings');
+      }
+
+      function setSettings( settings ) {
+        console.log( 'new settings inbound' )
+        if ( settings.secret !== $scope.settings.secret ) {
+          console.log( 'new settings', settings );
+          vm.cachedSettings = JSON.parse(JSON.stringify( settings ));
+          $scope.$apply( function() {
+            $scope.settings = settings;
+          }, 0)
+        }
+      }
+
+      function sendSettings() {
+        var temp = $scope.settings;
+        var send = false;
+        console.log( $scope.settings, vm.cachedSettings )
+        for ( var prop in $scope.settings ) {
+          if ( $scope.settings.hasOwnProperty( prop ) ) {
+            if ( $scope.settings[prop] !== vm.cachedSettings[prop] ) {
+              send = true;
+            }
+          }
+        }
+        console.log( send );
+        if ( send ) {
+          socket.emit('send-settings', temp )
+        }
+      }
+
+      function startStream() {
+        socket.emit('start-stream');
+      }
+
+      function takeStill() {
+        socket.emit('take-still');
+      }
+
+    });
+  </script>
+</head>
+ 
+<body class="container" ng-app="camera">
+  
+  <div id="app" ng-controller="cameraController as cameraCtrl">
+
+    <div id="options" ng-show="cameraCtrl.showOptions">
+      <div id="optionsScroll">
+        <label for="iso">ISO<span ng-if="settings.iso == 0">Auto</span><span ng-if="settings.iso > 0">{{settings.iso}}</span></label>
+        <input id="iso" type="range" ng-model="settings.iso" min="0" max="800" step="100" >
+
+        <label for="sharpness">Sharpness<span>{{settings.sharpness}}</span></label>
+        <input id="sharpness" type="range" ng-model="settings.sharpness" min="-100" max="100" step="10" >
+
+        <label for="contrast">Contrast<span>{{settings.contrast}}</span></label>
+        <input id="contrast" type="range" ng-model="settings.contrast" min="-100" max="100" step="10" >
+
+        <label for="brightness">Brightness<span>{{settings.brightness}}</span></label>
+        <input id="brightness" type="range" ng-model="settings.brightness" min="0" max="100" step="1" >
+
+        <label for="saturation">Saturation<span>{{settings.saturation}}</span></label>
+        <input id="saturation" type="range" ng-model="settings.saturation" min="-100" max="100" step="10" >
+
+        <label for="ev">EV Compensation<span>{{settings.ev}}</span></label>
+        <input id="ev" type="range" ng-model="settings.ev" min="-10" max="10" step="1" >
+
+        <!-- <label for="shutter_speed">Shutter Speed<span>{{settings.shutter}}</span></label>
+        <input id="shutter_speed" type="range" ng-model="settings.shutter" min="0" max="6000" step="1" > -->
+      </div>
+
+      <div id="optionsToolbar">
+        <button id="closeOptions" ng-click="cameraCtrl.showOptions = !cameraCtrl.showOptions">Apply</button>
+      </div>
+    </div>
+
+    <div id="streambox">
+      <img src="" id="stream">
+      <div id="cameraToolbar">
+        <button id="shutter" ng-click="cameraCtrl.shutter()">Shutter</button>
+        <button id="toggleOptions" class="toolbarButton" ng-click="cameraCtrl.showOptions = !cameraCtrl.showOptions">Options</button>
+      </div>
+    </div>
+
+  </div>
+ 
+</body>
+ 
+</html>

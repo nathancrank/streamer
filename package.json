@@ -1,0 +1,18 @@
+{
+  "author": "Nathan Crank <me@nathancrank.com>",
+  "name": "streamer",
+  "description": "Streams raspberry pi camera",
+  "version": "0.0.0",
+  "repository": {
+    "url": ""
+  },
+  "dependencies": {
+    "express": "~4.13.3",
+    "socket.io": "~1.3.7"
+  },
+  "devDependencies": {},
+  "optionalDependencies": {},
+  "engines": {
+    "node": "*"
+  }
+}
